@@ -53,8 +53,9 @@ func parseArgs() (uint, int64, bool, string) {
 func listDirectory(directory string, maxSize int64, filePathChannel chan string) {
 	if files, err := ioutil.ReadDir(directory); exitOnError(err) {
 		for _, fileInfo := range files {
-			// TODO: skip symlinks
-			if (fileInfo.IsDir() == false) && (maxSize > fileInfo.Size()) {
+			notSymlink := !(fileInfo.Mode() & os.ModeSymlink != 0)
+
+			if notSymlink && (fileInfo.IsDir() == false) && (maxSize > fileInfo.Size()) {
 				absolutePath := filepath.Join(directory, fileInfo.Name())
 				filePathChannel <- absolutePath
 			}
@@ -66,7 +67,6 @@ func listDirectoryRecursively(directory string, maxSize int64, filePathChannel c
 	filepath.Walk(directory, func(absolutePath string, info os.FileInfo, err error) error {
 		exitOnError(err)
 
-		// TODO: skip symlinks
 		if (info.IsDir() == false) && (maxSize > info.Size()) {
 			filePathChannel <- absolutePath
 		}
