@@ -51,44 +51,36 @@ func parseArgs() (uint, int64, bool, string) {
 	return *workerCount, ((*maxSize) * megabyte), *isRecursive, *directory
 }
 
-func listDirectory(directory string, maxSize int64) []string {
-	var includedFiles []string
-
+func listDirectory(directory string, maxSize int64, filePathChannel chan string) {
 	if files, err := ioutil.ReadDir(directory); exitOnError(err) {
 		for _, fileInfo := range files {
-			// SKIP SIMLINKS HERE
+			// TODO: skip symlinks
 			if (fileInfo.IsDir() == false) && (maxSize > fileInfo.Size()) {
 				absolutePath := filepath.Join(directory, fileInfo.Name())
-				includedFiles = append(includedFiles, absolutePath)
+				filePathChannel <- absolutePath
 			}
 		}
 	}
-
-	return includedFiles
 }
 
-func listDirectoryRecursively(directory string, maxSize int64) []string {
-	var includedFiles []string
-
-	filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
+func listDirectoryRecursively(directory string, maxSize int64, filePathChannel chan string) {
+	filepath.Walk(directory, func(absolutePath string, info os.FileInfo, err error) error {
 		exitOnError(err)
 
-		// SKIP SIMLINKS HERE
+		// TODO: skip symlinks
 		if (info.IsDir() == false) && (maxSize > info.Size()) {
-			includedFiles = append(includedFiles, path)
+			filePathChannel <- absolutePath
 		}
 
 		return nil
 	})
-
-	return includedFiles
 }
 
-func listFiles(directory string, maxSize int64, isRecursive bool) []string {
+func dispatchFilePaths(directory string, maxSize int64, isRecursive bool, filePathChannel chan string) {
 	if isRecursive {
-		return listDirectoryRecursively(directory, maxSize)
+		listDirectoryRecursively(directory, maxSize, filePathChannel)
 	}
-	return listDirectory(directory, maxSize)
+	listDirectory(directory, maxSize, filePathChannel)
 }
 
 func hashFile(filePath string) [16]byte {
@@ -98,18 +90,16 @@ func hashFile(filePath string) [16]byte {
 }
 
 func listenForFilePath(filePathChannel chan string) {
-	for {
-		select {
-		case filePath := <-filePathChannel:
-			hashValue := hashFile(filePath)
-			mutexForResults.Lock()
-			results[hashValue] = append(results[hashValue], filePath)
-			mutexForResults.Unlock()
-		default:
-			wg.Done()
-			return
-		}
+	for filePath := range filePathChannel {
+		hashValue := hashFile(filePath)
+
+		mutexForResults.Lock()
+
+		results[hashValue] = append(results[hashValue], filePath)
+
+		mutexForResults.Unlock()
 	}
+	wg.Done()
 }
 
 func reportDuplicates() {
@@ -123,9 +113,7 @@ func reportDuplicates() {
 func main() {
 	workerCount, maxSize, isRecursive, directory := parseArgs()
 
-	filesToHash := listFiles(directory, maxSize, isRecursive)
-
-	filePathChannel := make(chan string, len(filesToHash))
+	filePathChannel := make(chan string, workerCount)
 
 	wg.Add(int(workerCount))
 
@@ -133,14 +121,11 @@ func main() {
 		go listenForFilePath(filePathChannel)
 	}
 
-	for _, filePath := range filesToHash {
-		filePathChannel <- filePath
-	}
-
-	wg.Wait()
+	dispatchFilePaths(directory, maxSize, isRecursive, filePathChannel)
 
 	close(filePathChannel)
 
+	wg.Wait()
+
 	reportDuplicates()
 }
-
