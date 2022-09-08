@@ -3,12 +3,11 @@ package main
 import (
 	"crypto/md5"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
-	// "time"
-	"fmt"
 	"sync"
 )
 
@@ -79,6 +78,7 @@ func listDirectoryRecursively(directory string, maxSize int64, filePathChannel c
 func dispatchFilePaths(directory string, maxSize int64, isRecursive bool, filePathChannel chan string) {
 	if isRecursive {
 		listDirectoryRecursively(directory, maxSize, filePathChannel)
+		return
 	}
 	listDirectory(directory, maxSize, filePathChannel)
 }
@@ -92,22 +92,28 @@ func hashFile(filePath string) [16]byte {
 func listenForFilePath(filePathChannel chan string) {
 	for filePath := range filePathChannel {
 		hashValue := hashFile(filePath)
-
 		mutexForResults.Lock()
-
 		results[hashValue] = append(results[hashValue], filePath)
-
 		mutexForResults.Unlock()
 	}
 	wg.Done()
 }
 
 func reportDuplicates() {
+	totalFileCount := 0
+
+	duplicateCount := 0
+
 	for _, filePaths := range results {
+
 		if len(filePaths) > 1 {
-			fmt.Println("Duplicates -> ", filePaths)
+			fmt.Println("Duplicates: ", filePaths)
+			duplicateCount++
 		}
+
+		totalFileCount += len(filePaths)
 	}
+	fmt.Println("Total files scanned: ", totalFileCount, ". Duplicate count: ", duplicateCount)
 }
 
 func main() {
