@@ -61,10 +61,12 @@ func listDirectory(directory string, maxSize int64, filePathChannel chan string)
 }
 
 func listDirectoryRecursively(directory string, maxSize int64, filePathChannel chan string) {
-	filepath.Walk(directory, func(absolutePath string, info os.FileInfo, err error) error {
+	filepath.Walk(directory, func(absolutePath string, fileInfo os.FileInfo, err error) error {
 		exitOnError(err)
 
-		if (info.IsDir() == false) && (maxSize > info.Size()) {
+		notSymlink := !(fileInfo.Mode() & os.ModeSymlink != 0)
+
+		if notSymlink && (fileInfo.IsDir() == false) && (maxSize > fileInfo.Size()) {
 			filePathChannel <- absolutePath
 		}
 
