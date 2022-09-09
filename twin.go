@@ -3,15 +3,12 @@ package main
 import (
 	"crypto/md5"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
 )
-
-var _ = fmt.Println
 
 const (
 	megabyte = 1048576
@@ -31,16 +28,16 @@ func exitOnError(err error) bool {
 	return true
 }
 
-func parseArgs() (uint, int64, bool, string) {
+func parseArgs() (int64, int64, bool, string) {
 	var maxSize *int64 = flag.Int64("max_size", 15, "maximum file size should be positive integer")
 	var directory *string = flag.String("directory", "./", "absolute path required")
-	var workerCount *uint = flag.Uint("worker_count", 10, "workers count should be positive integer")
+	var workerCount *int64 = flag.Int64("worker_count", 10, "number of workers should be a positive integer")
 	var isRecursive *bool = flag.Bool("recursive", false, "recursive is used to indicate whether files in subdirectories should be included")
 
 	flag.Parse()
 
-	if *workerCount == 0 {
-		log.Fatal("workers count should be a positive integer")
+	if *workerCount < 1 {
+		log.Fatal("number of workers should be a positive integer")
 	}
 
 	if *maxSize < 1 {
@@ -107,23 +104,25 @@ func reportDuplicates() {
 	for _, filePaths := range results {
 
 		if len(filePaths) > 1 {
-			fmt.Println("Duplicates: ", filePaths)
+			log.Println("Duplicates: ", filePaths)
 			duplicateCount++
 		}
 
 		totalFileCount += len(filePaths)
 	}
-	fmt.Println("Total files scanned: ", totalFileCount, ". Duplicate count: ", duplicateCount)
+	log.Println("Total files scanned: ", totalFileCount, " . Found ", duplicateCount, " duplicates.")
 }
 
 func main() {
 	workerCount, maxSize, isRecursive, directory := parseArgs()
 
+	log.Println("Scanning: ", directory, " . Using ", workerCount, " workers")
+
 	filePathChannel := make(chan string, workerCount)
 
 	wg.Add(int(workerCount))
 
-	for i := 0; i < int(workerCount); i++ {
+	for i := int64(0); i < workerCount; i++ {
 		go listenForFilePath(filePathChannel)
 	}
 
