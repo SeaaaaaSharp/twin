@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/md5"
 	"flag"
+	"io/fs"
 	"io/ioutil"
 	"log"
 	"os"
@@ -50,7 +51,7 @@ func parseArgs() (int64, int64, bool, string) {
 func listDirectory(directory string, maxSize int64, filePathChannel chan string) {
 	if files, err := ioutil.ReadDir(directory); exitOnError(err) {
 		for _, fileInfo := range files {
-			notSymlink := !(fileInfo.Mode() & os.ModeSymlink != 0)
+			notSymlink := !(fileInfo.Mode()&os.ModeSymlink != 0)
 
 			if notSymlink && (fileInfo.IsDir() == false) && (maxSize > fileInfo.Size()) {
 				absolutePath := filepath.Join(directory, fileInfo.Name())
@@ -61,12 +62,18 @@ func listDirectory(directory string, maxSize int64, filePathChannel chan string)
 }
 
 func listDirectoryRecursively(directory string, maxSize int64, filePathChannel chan string) {
-	filepath.Walk(directory, func(absolutePath string, fileInfo os.FileInfo, err error) error {
+	filepath.WalkDir(directory, func(absolutePath string, entry fs.DirEntry, err error) error {
 		exitOnError(err)
 
-		notSymlink := !(fileInfo.Mode() & os.ModeSymlink != 0)
+		fileInfo, err := entry.Info()
 
-		if notSymlink && (fileInfo.IsDir() == false) && (maxSize > fileInfo.Size()) {
+		exitOnError(err)
+
+		notSymlink := !(fileInfo.Mode()&os.ModeSymlink != 0)
+
+		shouldBeIncluded := (fileInfo.IsDir() == false) && (maxSize > fileInfo.Size())
+
+		if notSymlink && shouldBeIncluded {
 			filePathChannel <- absolutePath
 		}
 
@@ -77,9 +84,9 @@ func listDirectoryRecursively(directory string, maxSize int64, filePathChannel c
 func dispatchFilePaths(directory string, maxSize int64, isRecursive bool, filePathChannel chan string) {
 	if isRecursive {
 		listDirectoryRecursively(directory, maxSize, filePathChannel)
-		return
+	} else {
+		listDirectory(directory, maxSize, filePathChannel)
 	}
-	listDirectory(directory, maxSize, filePathChannel)
 }
 
 func hashFile(filePath string) [16]byte {
@@ -112,13 +119,13 @@ func reportDuplicates() {
 
 		totalFileCount += len(filePaths)
 	}
-	log.Println("Total files scanned: ", totalFileCount, " . Found ", duplicateCount, " duplicates.")
+	log.Println("Total files scanned:", totalFileCount, ". Duplicates found:", duplicateCount)
 }
 
 func main() {
 	workerCount, maxSize, isRecursive, directory := parseArgs()
 
-	log.Println("Scanning: ", directory, " . Using ", workerCount, " workers")
+	log.Println("Scanning: ", directory, ". Using", workerCount, "workers")
 
 	filePathChannel := make(chan string, workerCount)
 
