@@ -48,12 +48,18 @@ func parseArgs() (int64, int64, bool, string) {
 	return *workerCount, ((*maxSize) * megabyte), *isRecursive, *directory
 }
 
+func shouldBeIncluded(fileInfo fs.FileInfo, maxSize int64) bool {
+        notSymlink := !(fileInfo.Mode()&os.ModeSymlink != 0)
+        
+        isIncluded := (fileInfo.IsDir() == false) && (maxSize >= fileInfo.Size())
+
+        return notSymlink && isIncluded
+}
+
 func listDirectory(directory string, maxSize int64, filePathChannel chan string) {
 	if files, err := ioutil.ReadDir(directory); exitOnError(err) {
 		for _, fileInfo := range files {
-			notSymlink := !(fileInfo.Mode()&os.ModeSymlink != 0)
-
-			if notSymlink && (fileInfo.IsDir() == false) && (maxSize > fileInfo.Size()) {
+                        if shouldBeIncluded(fileInfo, maxSize) {
 				absolutePath := filepath.Join(directory, fileInfo.Name())
 				filePathChannel <- absolutePath
 			}
@@ -69,11 +75,7 @@ func listDirectoryRecursively(directory string, maxSize int64, filePathChannel c
 
 		exitOnError(err)
 
-		notSymlink := !(fileInfo.Mode()&os.ModeSymlink != 0)
-
-		shouldBeIncluded := (fileInfo.IsDir() == false) && (maxSize > fileInfo.Size())
-
-		if notSymlink && shouldBeIncluded {
+		if shouldBeIncluded(fileInfo, maxSize) {
 			filePathChannel <- absolutePath
 		}
 
@@ -95,12 +97,16 @@ func hashFile(filePath string) [16]byte {
 	return md5.Sum(fileContent)
 }
 
+func storeHashValue(hashValue [16]byte, filePath string) {
+        mutexForResults.Lock()
+        results[hashValue] = append(results[hashValue], filePath)
+        mutexForResults.Unlock()
+}
+
 func listenForFilePath(filePathChannel chan string) {
 	for filePath := range filePathChannel {
 		hashValue := hashFile(filePath)
-		mutexForResults.Lock()
-		results[hashValue] = append(results[hashValue], filePath)
-		mutexForResults.Unlock()
+                storeHashValue(hashValue, filePath)
 	}
 	wg.Done()
 }
