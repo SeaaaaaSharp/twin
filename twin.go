@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/md5"
 	"flag"
+	"io"
 	"io/fs"
 	"io/ioutil"
 	"log"
@@ -49,17 +50,17 @@ func parseArgs() (int64, int64, bool, string) {
 }
 
 func shouldBeIncluded(fileInfo fs.FileInfo, maxSize int64) bool {
-        notSymlink := !(fileInfo.Mode()&os.ModeSymlink != 0)
-        
-        isIncluded := (fileInfo.IsDir() == false) && (maxSize >= fileInfo.Size())
+	notSymlink := !(fileInfo.Mode()&os.ModeSymlink != 0)
 
-        return notSymlink && isIncluded
+	isIncluded := (fileInfo.IsDir() == false) && (maxSize >= fileInfo.Size())
+
+	return notSymlink && isIncluded
 }
 
 func listDirectory(directory string, maxSize int64, filePathChannel chan string) {
 	if files, err := ioutil.ReadDir(directory); exitOnError(err) {
 		for _, fileInfo := range files {
-                        if shouldBeIncluded(fileInfo, maxSize) {
+			if shouldBeIncluded(fileInfo, maxSize) {
 				absolutePath := filepath.Join(directory, fileInfo.Name())
 				filePathChannel <- absolutePath
 			}
@@ -92,21 +93,31 @@ func dispatchFilePaths(directory string, maxSize int64, isRecursive bool, filePa
 }
 
 func hashFile(filePath string) [16]byte {
-	fileContent, err := os.ReadFile(filePath)
+	fileReader, err := os.Open(filePath)
+
 	exitOnError(err)
-	return md5.Sum(fileContent)
+
+	defer fileReader.Close()
+
+	hasher := md5.New()
+
+	_, err = io.Copy(hasher, fileReader)
+
+	exitOnError(err)
+
+	return *(*[16]byte)(hasher.Sum(nil))
 }
 
 func storeHashValue(hashValue [16]byte, filePath string) {
-        mutexForResults.Lock()
-        results[hashValue] = append(results[hashValue], filePath)
-        mutexForResults.Unlock()
+	mutexForResults.Lock()
+	results[hashValue] = append(results[hashValue], filePath)
+	mutexForResults.Unlock()
 }
 
 func listenForFilePath(filePathChannel chan string) {
 	for filePath := range filePathChannel {
 		hashValue := hashFile(filePath)
-                storeHashValue(hashValue, filePath)
+		storeHashValue(hashValue, filePath)
 	}
 	wg.Done()
 }
