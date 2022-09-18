@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	megabyte = 1048576
+	megabyte = 1 << 20
 )
 
 var (
