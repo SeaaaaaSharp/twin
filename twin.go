@@ -1,7 +1,7 @@
 package main
 
 import (
-	"crypto/md5"
+	"crypto/sha1"
 	"flag"
 	"io"
 	"io/fs"
@@ -99,7 +99,7 @@ func hashFile(filePath string) [16]byte {
 
 	defer fileReader.Close()
 
-	hasher := md5.New()
+	hasher := sha1.New()
 
 	_, err = io.Copy(hasher, fileReader)
 
